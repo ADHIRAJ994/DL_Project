@@ -1,469 +1,165 @@
-# Adaptive Learned Image Compression with Graph Neural Networks (GLIC)
+# CVPR2026-Adaptive Learned Image Compression with Graph Neural Networks
 
-A research-oriented implementation and experimental study of **GLIC (Graph-based Learned Image Compression)**, an adaptive learned image compression framework that uses **Graph-based Feature Aggregation (GFA)** to model content-dependent relationships between image features.
 
-This project combines the official GLIC implementation with reproducible inference experiments, GFA visualizations, controlled graph-connectivity ablations, and a simplified custom GFA prototype.
+<img src="./assets/logo.png"  style="zoom: 33%;" />
 
----
+Our code and some of the checkpoints are released. In the meantime, if you are interested, please feel free to check out our previous paper and open-source repository: [Content-Aware Mamba for Learned Image Compression (ICLR 2026)](https://openreview.net/forum?id=WwDNiisZQm), [CMIC GitHub](https://github.com/UnoC-727/CMIC).
 
-## Project Overview
 
-Traditional learned image-compression networks commonly rely on fixed convolutional or window-based local connectivity. That structure is efficient, but it does not always adapt well to images containing very different spatial patterns such as edges, textures, repeated structures, and smooth regions.
+## News 🔥🔥🔥
 
-GLIC addresses this by introducing **content-adaptive graph connectivity** inside the image-compression transform.
+Our paper "Next-Frame Decoding for Ultra-Low-Bitrate Image Compression with Video Diffusion Priors" has been accepted to ECCV 2026. Code and checkpoints will be released at [NeFIC](https://github.com/UnoC-727/NeFIC).
 
-Instead of treating every feature location in exactly the same way, GLIC:
 
-1. Represents feature-map locations as graph nodes.
-2. Samples candidate neighbors at **local and global scales**.
-3. Estimates local content complexity using **Sobel-based gradients**.
-4. Allocates graph degree adaptively according to content.
-5. Uses **cosine similarity** to identify relevant neighbors.
-6. Builds an adaptive graph mask.
-7. Performs **graph attention / feature aggregation** over the selected connections.
+## Introduction
 
-The result is a compression transform whose feature communication is more adaptive to image content.
+This repository present the offical [Pytorch](https://pytorch.org/) implementation of [Adaptive Learned Image Compression with Graph Neural Networks (CVPR2026)](https://arxiv.org/abs/2603.25316). 
 
----
+**Abstract:**
+Efficient image compression relies on modeling both local and global redundancy. Most state-of-the-art (SOTA) learned image compression (LIC) methods are based on CNNs or Transformers, which are inherently rigid. Standard CNN kernels and window-based attention mechanisms impose fixed receptive fields and static connectivity patterns, which potentially couple non-redundant pixels simply due to their proximity in Euclidean space. This rigidity limits the model's ability to adaptively capture spatially varying redundancy across the image, particularly at the global level. To overcome these limitations, we propose a content-adaptive image compression framework based on Graph Neural Networks (GNNs). Specifically, our approach constructs dual-scale graphs that enable flexible, data-driven receptive fields. Furthermore, we introduce adaptive connectivity by dynamically adjusting the number of neighbors for each node based on local content complexity. These innovations empower our Graph-based Learned Image Compression (GLIC) model to effectively model diverse redundancy patterns across images, leading to more efficient and adaptive compression. Experiments demonstrate that GLIC achieves state-of-the-art performance, achieving BD-rate reductions of 19.29%, 21.69%, and 18.71% relative to VTM-9.1 on Kodak, Tecnick, and CLIC, respectively.
 
-## Objectives
 
-The project has four main objectives:
+## Architectures
 
-- Understand the architecture and motivation of GLIC and GFA.
-- Run the official pretrained GLIC models and measure rate–distortion performance.
-- Study the effect of removing local or global graph connectivity through inference-time ablation.
-- Implement and train a simplified custom `MyGFA` prototype to understand the core graph-aggregation idea independently of the full compression stack.
+The overall idea and performance of GLIC.
 
----
+<img src="./assets/teasor.png"  style="zoom: 33%;" />
 
-## High-Level Architecture
+The detailed architecture of GLIC and GFA block.
 
-```text
-                         GLIC Compression Pipeline
+<img src="./assets/method.png"  style="zoom: 33%;" />
 
- Input Image x
-      │
-      ▼
- ┌───────────────┐
- │ Analysis      │
- │ Transform g_a │
- └───────┬───────┘
-         │
-         │ feature maps
-         ▼
- ┌─────────────────────────────┐
- │ Graph-based Feature         │
- │ Aggregation (GFA)           │
- │                             │
- │ Local + Global Candidates   │
- │ → Content Complexity        │
- │ → Adaptive Degree           │
- │ → Cosine Similarity         │
- │ → Graph Attention           │
- └─────────────┬───────────────┘
-               │
-               ▼
-        Latent representation y
-               │
-               ▼
- ┌─────────────────────────────┐
- │ Hyperprior / Entropy Model  │
- │ Probability estimation      │
- │ + context models            │
- └─────────────┬───────────────┘
-               │
-               ▼
-       Entropy-coded bitstream
-               │
-               ▼
-       Quantized latent y-hat
-               │
-               ▼
- ┌───────────────┐
- │ Synthesis     │
- │ Transform g_s │
- └───────┬───────┘
-         │
-         ▼
-   Reconstructed image x-hat
+An example of GLIC’s adaptivity through ERF visualizations
+<img src="./assets/adaptive.png"  style="zoom: 33%;" />
+
+## R-D data
+
+### Kodak,PSNR
+
+``` 
+glic_bpp = [0.8175, 0.5845, 0.4138, 0.2808, 0.1822, 0.1083]
+glic_psnr = [38.1210, 36.2082, 34.4241, 32.6607, 30.9614, 29.2139]
 ```
 
-The official model uses GFA blocks in multiple encoder and decoder stages while retaining the learned hyperprior and entropy-coding components used for practical learned compression.
 
----
-
-## What is GFA?
-
-**Graph-based Feature Aggregation (GFA)** is the central adaptive component.
-
-### 1. Feature map → graph nodes
-
-For a feature map of shape `B × C × H × W`, each spatial position can be treated as a graph node. The model therefore has `H × W` spatial nodes per sample.
-
-### 2. Dual-scale candidate sampling
-
-GFA builds two candidate sets:
-
-- **Local candidates:** nearby spatial positions.
-- **Global candidates:** sparse positions sampled across a wider spatial range.
-
-This allows the model to combine fine local interactions with long-range relationships.
-
-### 3. Content complexity
-
-A Sobel operator estimates the strength of local image/feature gradients. High gradient energy corresponds to more complex regions such as edges and textures; low energy corresponds to smoother regions.
-
-A representative complexity measure used by the implementation is an RMS aggregation of the Sobel gradient magnitude.
-
-### 4. Adaptive degree
-
-The estimated content complexity is used to determine how many graph connections a node should receive. The aim is to avoid giving every node an identical connectivity pattern.
-
-### 5. Similarity-based neighbor selection
-
-Candidate feature vectors are compared using cosine similarity. An adaptive graph mask selects the most relevant relationships while respecting the content-dependent connectivity budget.
-
-### 6. Graph attention
-
-For the selected edges, GFA computes attention/correlation scores using projected features, cosine similarity, a learnable scale, and relative-position information. Messages from relevant neighbors are then aggregated back into the node features.
-
----
-
-## Why Local + Global Graphs?
-
-The dual-scale design is important because images contain structure at multiple spatial scales.
-
-**Local connectivity** is useful for:
-- edges and boundaries,
-- nearby textures,
-- fine spatial detail.
-
-**Global connectivity** is useful for:
-- repeated patterns,
-- distant but semantically related regions,
-- long-range dependencies.
-
-GLIC combines both rather than forcing every feature interaction to be purely local or purely global.
-
----
-
-## Experimental Setup
-
-### Test images
-
-The project evaluates the official checkpoints on a 9-image test set:
-
-```text
-animals.jpg
-building.jpg
-city.jpg
-flowers.jpg
-food.jpg
-indoor.jpg
-landscape.jpg
-people.jpg
-road.jpg
+### CLIC,PSNR
+```
+glic_bpp = [0.6088, 0.4257, 0.2995, 0.2057, 0.1359, 0.0829]
+glic_psnr = [38.8689, 37.2540, 35.7457, 34.2421, 32.7341, 31.1126]
 ```
 
-### Official checkpoints evaluated
 
-Three pretrained operating points were evaluated:
-
-- `0.05checkpoint_best.pth.tar`
-- `0.025checkpoint_best.pth.tar`
-- `0.0067checkpoint_best.pth.tar`
-
-The reported main results use the **actual `Compress` pipeline** (entropy-coded bitstream generation followed by decompression), rather than only the forward-pass rate estimate.
-
----
-
-## Main Rate–Distortion Results
-
-| Checkpoint (λ) | BPP | PSNR (dB) |
-|---|---:|---:|
-| **0.05** | **1.042813** | **37.0306** |
-| **0.025** | **0.768519** | **35.2129** |
-| **0.0067** | **0.420127** | **31.7742** |
-
-### Interpretation
-
-The three operating points show the expected **rate–distortion trade-off**:
-
-- Increasing the compression rate improves reconstruction quality.
-- Lower-bitrate operation reduces storage/transmission cost but decreases PSNR.
-- Across the evaluated operating points, bitrate falls from **1.042813 BPP to 0.420127 BPP**, while PSNR falls from **37.0306 dB to 31.7742 dB**.
-
-The corresponding R-D curve is included in `results/rd_curve_glic.png` when the project results are packaged.
-
----
-
-## GFA Ablation Study
-
-A controlled inference-time ablation was performed using the **same pretrained GLIC checkpoint** while changing the sampling mode of the GFA blocks:
-
-| GFA Configuration | BPP | PSNR (dB) |
-|---|---:|---:|
-| **Official dual-scale** | **1.042561** | **37.0316** |
-| **Local-only** | **1.034814** | **36.8585** |
-| **Global-only** | **1.031651** | **36.7226** |
-
-### Interpretation
-
-The original dual-scale configuration gives the highest reconstruction quality in this experiment.
-
-Relative to the official dual-scale setting:
-
-- Local-only loses **0.1731 dB PSNR**.
-- Global-only loses **0.3090 dB PSNR**.
-
-The global-only configuration reaches a slightly lower bitrate, but it also incurs a larger quality reduction. The result therefore supports retaining both local and global graph connectivity rather than judging the configurations on bitrate alone.
-
-> **Experimental caveat:** this is an **inference-time ablation on one pretrained checkpoint**. The ablated variants were not independently retrained, so the result should be interpreted as a controlled sensitivity study rather than a comparison of three independently optimized models.
-
----
-
-## GFA Visualization
-
-The project includes a visualization tool that exposes the graph behavior of the encoder stages. The generated maps include:
-
-```text
-stage1_complexity.png
-stage1_local_degree.png
-stage1_global_degree.png
-stage2_complexity.png
-stage2_local_degree.png
-stage2_global_degree.png
+### Tecnick,PSNR
+```
+glic_bpp = [0.5640, 0.3993, 0.2874, 0.2038, 0.1413, 0.0928]
+glic_psnr = [38.8924, 37.3865, 35.9622, 34.5074, 33.0265, 31.3966]
 ```
 
-These visualizations are intended to make the adaptive behavior of GFA interpretable:
+## Usage
 
-- **Complexity maps** indicate spatial content variation.
-- **Local degree maps** show local graph connectivity.
-- **Global degree maps** show global graph connectivity.
-
-The visualization demonstrates that graph structure can be inspected at the feature level rather than treating the compression transform as a black box.
-
----
-
-## Custom MyGFA Prototype
-
-To understand the GFA concept independently, a simplified experimental implementation named `MyGFA` was developed.
-
-The prototype includes:
-
-```text
-Sobel complexity
-      ↓
-Local candidate sampling
-      ↓
-Global candidate sampling
-      ↓
-Cosine similarity
-      ↓
-Adaptive neighbor selection
-      ↓
-Global adaptive aggregation
-      ↓
-Residual + feed-forward refinement
-```
-
-A small CNN baseline was compared with the CNN + `MyGFA` prototype:
-
-| Model | MSE | PSNR (dB) |
-|---|---:|---:|
-| **CNN Baseline** | **0.017222** | **17.6409** |
-| **CNN + Custom MyGFA** | **0.018760** | **17.2753** |
-
-### Important interpretation
-
-This prototype is **not a replacement for the official GLIC model**. It is a simplified educational/research experiment with a tiny dataset and a much smaller architecture.
-
-The experiment therefore demonstrates the process of implementing and testing an adaptive graph block, but it should not be used to claim that GFA is intrinsically worse than CNNs. The official GLIC experiments above are the primary compression results.
-
----
-
-## Repository Structure
-
-```text
-GLIC1/
-│
-├── glic_model/
-│   ├── layers/
-│   ├── models/
-│   └── utils/
-│
-├── test_images/
-│
-├── results/
-│   ├── gfa_visualization/
-│   ├── rd_005.json
-│   ├── rd_0025.json
-│   ├── rd_0067.json
-│   └── rd_curve_glic.png
-│
-├── test.py
-├── train.py
-├── Meter.py
-│
-├── ablation.py
-├── visualize_gfa.py
-├── my_gfa.py
-├── custom_compression.py
-├── train_prototype.py
-│
-├── README.md
-└── requirements.txt
-```
-
-Large pretrained checkpoints may be kept outside Git and alongside the project ZIP when a fully runnable offline copy is required.
-
-Expected checkpoint files:
-
-```text
-0.05checkpoint_best.pth.tar
-0.025checkpoint_best.pth.tar
-0.0067checkpoint_best.pth.tar
-```
-
----
-
-## Installation
-
-A Python environment with PyTorch and the dependencies listed in `requirements.txt` is required.
-
-Example:
+### Training
 
 ```bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
+python train.py \
+  --train-root /home/datasets \
+  --train-split flickr \
+  --test-root /home/datasets \
+  --test-split kodak \
+  --epochs 600 \
+  --learning-rate 1e-4 \
+  --aux-learning-rate 1e-3 \
+  --lmbda 0.05 \
+  --ortho-weight 1e-1 \
+  --batch-size 8 \
+  --test-batch-size 1 \
+  --num-workers 16 \
+  --clip-max-norm 1.0 \
+  --loss-type mse \
+  --patch-size 256 256 \
+  --large-patch-size 512 512 \
+  --lr-drop-epoch 500 \
+  --lr-after-drop 1e-5 \
+  --large-patch-start-epoch 510 \
+  --save-dir ./ckpt \
+  --eval-every 5000 \
+  --log-every 100 \
+  --metric-update-every 50 \
+  --cuda
 ```
 
-For a CUDA-enabled PyTorch installation, use a PyTorch build compatible with the GPU/driver available on the target machine.
 
-> The pretrained GLIC checkpoints are large binary files and are intentionally excluded from normal Git version control.
-
----
-
-## Running the Official Evaluation
-
-Evaluate one checkpoint:
+### Testing
 
 ```bash
-python test.py --checkpoint .\0.05checkpoint_best.pth.tar --image-dir .\test_images --num-workers 0 --save-json .\results\rd_005.json
+python test.py \
+  --checkpoint \
+    ./0.05checkpoint_best.pth.tar \
+    ./0.025checkpoint_best.pth.tar \
+  --image-dir "./kodak"
 ```
 
-```bash
-python test.py --checkpoint .\0.025checkpoint_best.pth.tar --image-dir .\test_images --num-workers 0 --save-json .\results\rd_0025.json
+## Pretrained Models
+
+This repository provides the implementation and checkpoints of GLIC, trained with the acceleration strategy of [AuxT](https://github.com/qingshi9974/auxt).
+
+**This is an initial release, and more updates will follow.**
+
+
+| Lambda | Metric | Baidu Netdisk                                                                          | Google Drive                                                                                          |
+| ------ | ------ | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| 0.05   | MSE    | [Baidu Netdisk (code: pnif)](https://pan.baidu.com/s/1i0fF3NS1A76dnyGkDOkg1A?pwd=pnif) | [Google Drive](https://drive.google.com/file/d/1HzEQHAHz0FiTstYBl6VceJo5ukTrH5-s/view?usp=sharing) |
+| 0.025  | MSE    | [Baidu Netdisk (code: gdsu)](https://pan.baidu.com/s/1s6kongGG-u9MfWmJG9cayw?pwd=gdsu) | [Google Drive](https://drive.google.com/file/d/1ju5E5MgZ4nXfB3xPamqej3Nt9c15qRtp/view?usp=sharing)    |
+| 0.013  | MSE    | [Baidu Netdisk (code: rayb)](https://pan.baidu.com/s/1cbfSgy3e1f2JJNaF0ig2cw?pwd=rayb) | [Google Drive](https://drive.google.com/file/d/1kJ2kkQmIJ-u8bEGMHNN4_dhP2QUySMzn/view?usp=sharing)    |
+| 0.0067 | MSE    | [Baidu Netdisk (code: 5rsg)](https://pan.baidu.com/s/14b3Rl99E7x7OK6n9ou8MMA?pwd=5rsg) | [Google Drive](https://drive.google.com/file/d/1Yw1APsP7bhv_5uXNm4BOI44IDXedZwFJ/view?usp=sharing)    |
+| 0.0035 | MSE    | [Baidu Netdisk (code: 73f9)](https://pan.baidu.com/s/1saVhoYrAZIx-c8Oj9xwEkA?pwd=73f9) | [Google Drive](https://drive.google.com/file/d/1POZTZXK7-mjeoVgxTkfQkg7Eqtn3Tq17/view?usp=sharing)    |
+| 0.0017 | MSE    | [Baidu Netdisk (code: 48vv)](https://pan.baidu.com/s/1a0aXESJvW8NGBfX0gsjSLw?pwd=48vv) | [Google Drive](https://drive.google.com/file/d/1EILFR4sgP3M3Y93_CFhYIV_dRBBClYrz/view?usp=sharing)    |
+
+
+## Acknowledgement
+
+This implementation builds upon several excellent projects:
+
+- [FTIC](https://github.com/qingshi9974/ICLR2024-FTIC)
+- [AuxT](https://github.com/qingshi9974/auxt)
+- [CompressAI](https://github.com/InterDigitalInc/CompressAI)
+- [IPG](https://github.com/huawei-noah/Efficient-Computing/tree/master/LowLevel/IPG)
+
+
+
+## Related Publications
+
+
+* **Content-Aware Mamba for Learned Image Compression**  
+  ***Yunuo Chen***, Zezheng Lyu, Bing He, Hongwei Hu, Qi Wang, Yuan Tian, Li Song, Wenjun Zhang, Guo Lu  
+  *ICLR 2026* | [📄 Paper](https://openreview.net/forum?id=WwDNiisZQm) | [💻 Code](https://github.com/UnoC-727/CMIC)
+
+* **Knowledge Distillation for Learned Image Compression**  
+  ***Yunuo Chen***, Zezheng Lyu, Bing He, Ning Cao, Gang Chen, Guo Lu, Wenjun Zhang  
+  *ICCV 2025* | [📄 Paper](https://openaccess.thecvf.com/content/ICCV2025/papers/Chen_Knowledge_Distillation_for_Learned_Image_Compression_ICCV_2025_paper.pdf)
+
+
+
+* **S2CFormer: Revisiting the RD-Latency Trade-off in Transformer-based Learned Image Compression**  
+  ***Yunuo Chen***, Qian Li, Bing He, Donghui Feng, Ronghua Wu, Qi Wang, Li Song, Guo Lu, Wenjun Zhang  
+  *arXiv, 2025* | [📄 Paper](https://arxiv.org/pdf/2502.00700) | [💻 Unofficial Code](https://github.com/tokkiwa/S2CFormer)
+
+  
+## Contact
+
+Feel free to reach me at [cyril-chenyn@sjtu.edu.cn](cyril-chenyn@sjtu.edu.cn) if you have any question.
+
+
+
+
+
+## Citation
+
 ```
-
-```bash
-python test.py --checkpoint .\0.0067checkpoint_best.pth.tar --image-dir .\test_images --num-workers 0 --save-json .\results\rd_0067.json
+@inproceedings{chen2026adaptive,
+  title={Adaptive Learned Image Compression with Graph Neural Networks},
+  author={Chen, Yunuo and He, Bing and Lyu, Zezheng and Hu, Hongwei and Gu, Qunshan and Tian, Yuan and Lu, Guo},
+  booktitle={Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition},
+  pages={12150--12161},
+  year={2026}
+}
 ```
-
-For a combined multi-checkpoint evaluation:
-
-```bash
-python test.py --checkpoint .\0.05checkpoint_best.pth.tar .\0.025checkpoint_best.pth.tar .\0.0067checkpoint_best.pth.tar --image-dir .\test_images --num-workers 0 --save-json .\results\rd_results.json
-```
-
----
-
-## Running the GFA Analysis
-
-Run the inference-time sampling ablation:
-
-```bash
-python ablation.py
-```
-
-Generate GFA complexity and degree visualizations:
-
-```bash
-python visualize_gfa.py
-```
-
----
-
-## Running the Custom Prototype
-
-The simplified implementation is contained in:
-
-```text
-my_gfa.py
-custom_compression.py
-train_prototype.py
-```
-
-Train the small prototype with:
-
-```bash
-python train_prototype.py
-```
-
-The prototype is intended for understanding and experimentation, not for reproducing the full computational scale of the official GLIC model.
-
----
-
-## Reproducibility Notes
-
-To keep the experimental claims precise:
-
-- **Official GLIC results** come from pretrained GLIC checkpoints evaluated on the project's 9-image test set.
-- **R-D results** use actual entropy-coded `Compress` measurements.
-- **GFA ablation** is inference-time and uses the same pretrained checkpoint for all sampling variants.
-- **Custom MyGFA** is a simplified prototype trained on a very small dataset and should be treated as an exploratory experiment.
-
-These distinctions are important when interpreting the results.
-
----
-
-## Key Takeaways
-
-1. **GLIC makes feature communication content-adaptive by constructing graphs over spatial feature locations.**
-2. **GFA combines local and global candidate interactions instead of relying on a single fixed connectivity pattern.**
-3. **Sobel-based complexity and similarity-aware graph selection provide an interpretable mechanism for adaptive connectivity.**
-4. **The pretrained model demonstrates a clear rate–distortion trade-off across multiple operating points.**
-5. **Removing either local or global graph connectivity reduces PSNR in the controlled inference-time ablation.**
-6. **The custom MyGFA prototype provides an independent implementation-level study of the main graph aggregation idea.**
-
----
-
-## Reference
-
-This project is based on the paper:
-
-**Adaptive Learned Image Compression with Graph Neural Networks**, CVPR 2026.
-
-Paper:  
-https://openaccess.thecvf.com/content/CVPR2026/html/Chen_Adaptive_Learned_Image_Compression_with_Graph_Neural_Networks_CVPR_2026_paper.html
-
-Official implementation:  
-https://github.com/UnoC-727/GLIC
-
-Please preserve the original project's attribution and license information when redistributing or modifying the implementation.
-
----
-
-## Project Contribution
-
-This repository is presented as an experimental project built around the official GLIC implementation. The work performed here includes:
-
-- setting up and running the official GLIC model,
-- evaluating three pretrained rate–distortion operating points,
-- generating GFA interpretability visualizations,
-- performing local-only and global-only graph ablations,
-- implementing a simplified custom `MyGFA` block,
-- training a small prototype for comparison,
-- organizing quantitative results and visual evidence for project presentation.
-
----
-
-## Final Conclusion
-
-GLIC demonstrates how **graph-based, content-adaptive feature aggregation** can be integrated into learned image compression. Rather than imposing identical spatial interactions everywhere, GFA adapts graph connectivity to feature content and combines local and long-range relationships.
-
-The experiments in this project reproduce the official pretrained compression pipeline, characterize its rate–distortion behavior, and provide an ablation-based study of its dual-scale graph design. The additional custom prototype reinforces the main architectural idea by implementing an independently understandable GFA-style block.
-
-**Result:** the project provides an end-to-end experimental study of graph-based learned image compression, from architecture and graph construction to compression metrics, ablation, visualization, and reproducible evaluation.
