@@ -1,0 +1,23 @@
+[
+  {
+    "mode": "official",
+    "forward_bpp": 1.035095487567622,
+    "forward_psnr": 37.0298264912794,
+    "compress_bpp": 1.042560506050605,
+    "compress_psnr": 37.03156307917053
+  },
+  {
+    "mode": "local",
+    "forward_bpp": 1.02743823544985,
+    "forward_psnr": 36.86118790608979,
+    "compress_bpp": 1.0348138980564723,
+    "compress_psnr": 36.858530371059516
+  },
+  {
+    "mode": "global",
+    "forward_bpp": 1.0238856737726374,
+    "forward_psnr": 36.724163093644556,
+    "compress_bpp": 1.031651081774844,
+    "compress_psnr": 36.72262348629307
+  }
+]

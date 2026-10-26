@@ -1,0 +1,15 @@
+{
+  "checkpoints": [
+    {
+      "checkpoint": ".\\0.025checkpoint_best.pth.tar",
+      "forward": {
+        "bpp": 0.7615207797239376,
+        "psnr": 35.21246437367545
+      },
+      "compress": {
+        "bpp": 0.7685185185185186,
+        "psnr": 35.21292719307135
+      }
+    }
+  ]
+}
