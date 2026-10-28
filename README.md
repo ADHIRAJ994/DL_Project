@@ -1,16 +1,6 @@
 # CVPR2026-Adaptive Learned Image Compression with Graph Neural Networks
 
 
-<img src="./assets/logo.png"  style="zoom: 33%;" />
-
-Our code and some of the checkpoints are released. In the meantime, if you are interested, please feel free to check out our previous paper and open-source repository: [Content-Aware Mamba for Learned Image Compression (ICLR 2026)](https://openreview.net/forum?id=WwDNiisZQm), [CMIC GitHub](https://github.com/UnoC-727/CMIC).
-
-
-## News 🔥🔥🔥
-
-Our paper "Next-Frame Decoding for Ultra-Low-Bitrate Image Compression with Video Diffusion Priors" has been accepted to ECCV 2026. Code and checkpoints will be released at [NeFIC](https://github.com/UnoC-727/NeFIC).
-
-
 ## Introduction
 
 This repository present the offical [Pytorch](https://pytorch.org/) implementation of [Adaptive Learned Image Compression with Graph Neural Networks (CVPR2026)](https://arxiv.org/abs/2603.25316). 
