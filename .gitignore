@@ -1,0 +1,64 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+
+# Downloaded datasets (DIV2K, Kodak, etc.)
+data/
+!data/README.md
+
+# Model checkpoints and trained weights
+checkpoints/*
+!checkpoints/README.md
+*.pth
+*.pt
+*.ckpt
+*.tar
+
+# Generated codec outputs; keep CSV metrics for reporting
+results/**/bitstreams/
+results/**/reconstructions/
+results/**/*.snnc
+results/**/*.bin
+results/**/*.npy
+results/**/*.npz
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+
+# Archives and generated packages
+*.zip
+*.7z
+*.rar
